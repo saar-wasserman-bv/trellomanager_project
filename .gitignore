@@ -1,0 +1,34 @@
+# Python bytecode:
+*.py[co]
+*__pycache__*
+*.cache*
+
+# Packaging files:
+*.egg*
+
+# Editor temp files:
+*.swp
+*~
+.vscode/
+*.code-workspace
+
+# Sphinx docs:
+build
+
+# SQLite3 database files:
+*.db
+
+# Logs:
+*.log
+
+.idea/
+
+etl/_logs/
+
+.ipynb_checkpoints/
+*.ipynb
+
+.coverage
+
+.cache/v/cache/lastfailed
+
