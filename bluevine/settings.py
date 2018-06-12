@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 
 import os
 
-from config import app_config
+from bluevine import app_config
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,7 +30,7 @@ DEBUG = True
 # Application definition
 
 INSTALLED_APPS = [
-    'trellomanager.profiles',
+    'trellomanager.github_integration',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-AUTH_USER_MODEL = 'profiles.TrelloUser'
+#AUTH_USER_MODEL = 'profiles.TrelloUser'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -51,7 +51,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = 'bluevine.urls'
 
 TEMPLATES = [
     {
@@ -69,7 +69,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = 'bluevine.wsgi.application'
 
 
 # Database
@@ -124,6 +124,7 @@ STATIC_URL = '/static/'
 
 ALLOWED_HOSTS = []
 
+
 # Email
 
 EMAIL_HOST = app_config['email']['host']
@@ -131,3 +132,16 @@ EMAIL_PORT = app_config['email']['port']
 EMAIL_HOST_USER = app_config['email']['user']
 EMAIL_HOST_PASSWORD = app_config['email']['password']
 EMAIL_USE_TLS = True
+
+
+# Trello
+
+TRELLO_API_KEY = app_config["trello"]["api_key"]
+TRELLO_API_TOKEN = app_config["trello"]["token"]
+TRELLO_API_URL = app_config["trello"]["url"]  # https://api.trello.com/1/
+
+
+# GitHub
+
+GITHUB_TOKEN = app_config["github"]["token"]
+GITHUB_API_URL = app_config["github"]["url"]

@@ -1,2 +1,14 @@
-Django==2.0.6
+certifi==2018.4.16
+chardet==3.0.4
+Django==2.0.5
+idna==2.6
+oauthlib==2.1.0
+py-trello==0.11.3
+PyGithub==1.39
+PyJWT==1.6.4
+python-dateutil==2.7.3
 pytz==2018.4
+requests==2.18.4
+requests-oauthlib==1.0.0
+six==1.11.0
+urllib3==1.22
