@@ -22,7 +22,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/2.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '!nkf6hhl@!-s=rd17oh8=l+2&6t@&zo7ow$7f_196y9k347j1('
+SECRET_KEY = app_config['secret_key']
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -138,10 +138,8 @@ EMAIL_USE_TLS = True
 
 TRELLO_API_KEY = app_config["trello"]["api_key"]
 TRELLO_API_TOKEN = app_config["trello"]["token"]
-TRELLO_API_URL = app_config["trello"]["url"]  # https://api.trello.com/1/
 
 
 # GitHub
 
 GITHUB_TOKEN = app_config["github"]["token"]
-GITHUB_API_URL = app_config["github"]["url"]

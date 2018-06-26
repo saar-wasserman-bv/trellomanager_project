@@ -1,14 +1,28 @@
-from django.core.management import BaseCommand
+import logging
+from itertools import groupby
+
 from trello import TrelloClient
 from github import Github
-from bluevine import settings
-from utils.github import fetch_data_from_pull_request_url
-#from ...tasks import get_unmerged_pull_requests
+
+from github import UnknownObjectException
+
+from django.core.management import BaseCommand
 from django.template import Template, Context
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage
+
+from bluevine import settings
+
+
+logger = logging.getLogger(__file__)
 
 
 class Command(BaseCommand):
+
+    def __init__(self):
+
+        self.trello_client = TrelloClient(settings.TRELLO_API_KEY, settings.TRELLO_API_TOKEN)
+        self.github_client = Github(settings.GITHUB_TOKEN).get_organization('bluevine-dev')
+        self.boards_names = {}
 
     def add_arguments(self, parser):  # pylint: disable=no-self-use
         """ Add extra arguments """
@@ -17,73 +31,161 @@ class Command(BaseCommand):
         parser.add_argument('--csv',
                             action='store_true',
                             default=False,
-                            help='attach a csv to the sent email')
-        parser.add_argument('--to',
-                            action='store_true',
-                            default=False,
-                            help='attach a csv to the sent email')
+                            help='attach a csv to the generated email')
+        parser.add_argument('--user',
+                            action='store',
+                            help='run command for specified user')
+        parser.add_argument('--group',
+                            action='store',
+                            help='run command for all members of the specified group')
 
     def handle(self, *args, **options):
-        data = get_unmerged_pull_requests()
-        send_unmerged_pull_requests_data(data)
+        """ Run command """
 
+        member_ids = []
+        group = options.get('group')
+        if group:
+            member_ids = []
+        else:
+            email = options.get('user')
+            if email:
+                member_ids = [self.trello_client.get_member(email).id]
+                print(member_ids)
 
-def get_unmerged_pull_requests(member_id=None):
-    """ Returns all unmerged pull requests related to cards """
+        # generate unmerged pull request email to all desired users
+        for member_id in member_ids:
+            data = self._get_unmerged_pull_requests2(member_id)
+            attachment = None
+            if data and options['csv']:
+                attachment = self.create_pull_requests_csv(data, member_id)
+                logger.info(f'attachment {attachment} was created')
 
-    trello_client = TrelloClient(settings.TRELLO_API_KEY, settings.TRELLO_API_TOKEN)
-    github_client = Github(settings.GITHUB_TOKEN)
+            # self.send_unmerged_pull_requests_data(data=data, recipients=[email], attachment=attachment)
+        self.send_unmerged_pull_requests_data(data=data, recipients=[email], attachment=attachment)
 
-    boards = trello_client.list_boards()
-    pull_requests_per_board = []
-    for board in boards:
-        cards = board.all_cards()
-        if member_id:
-            cards = [card for card in cards if member_id in card.member_id]
+    def _get_unmerged_pull_requests(self, member_id):
+        """ Returns all unmerged pull requests related to cards """
 
-        pull_requests_per_card = []
-        for card in cards:
-            attachments = card.get_attachments()
-            pr_attachments = [attachment for attachment in attachments if 'github.com' in attachment.url]
+        boards = self.trello_client.list_boards(board_filter='open')
+        pull_requests_per_board = []
+        for board in boards:
+            cards = board.get_cards(card_filter='open')
 
-            # check for unmerged pull request in card
-            unmerged_pull_requests = []
-            for pr_attachment in pr_attachments:
-                owner, repo, number = fetch_data_from_pull_request_url(pr_attachment.url)
-                r = github_client.get_user().get_repo(repo)
+            # get only member cards
+            cards = [card for card in cards if member_id in card.member_id and not card.closed]
+            pull_requests_per_card = []
+            for card in cards:
+                attachments = card.get_attachments()
+                pr_attachments = [attachment for attachment in attachments if all(s in attachment.url
+                                                                                  for s in['github.com', 'pull'])]
+                # check for unmerged pull request in card
+                unmerged_pull_requests = []
+                for pr_attachment in pr_attachments:
+                    try:
+                        pull_request = self._get_pull_request_by_url(pr_attachment.url)
+                    except UnknownObjectException as e:
+                        logger.error(str(e))
+                        continue
 
-                pull_request = r.get_pull(int(number))
-                if not pull_request.is_merged():
-                    pull_request_data = {
-                        'title': pull_request.title,
-                        "url": pr_attachment.url,
-                    }
+                    if not pull_request.is_merged() and not pull_request.closed_at:
+                        pull_request_data = {
+                            'name': pull_request.title,
+                            "url": pr_attachment.url,
+                        }
 
-                    unmerged_pull_requests.append(pull_request_data)
-            if unmerged_pull_requests:
-                card_data = {'card_name': card.name,
-                             'card_url': card.url,
-                             'pull_requests': unmerged_pull_requests}
-                pull_requests_per_card.append(card_data)
+                        unmerged_pull_requests.append(pull_request_data)
+                if unmerged_pull_requests:
+                    card_data = {'name': card.name,
+                                 'url': card.url,
+                                 'pull_requests': unmerged_pull_requests}
+                    pull_requests_per_card.append(card_data)
 
-        if pull_requests_per_card:
-            board_data = {'board_name': board.name,
-                          'cards': pull_requests_per_card}
-            pull_requests_per_board.append(board_data)
+            if pull_requests_per_card:
+                board_data = {'name': board.name,
+                              'cards': pull_requests_per_card}
+                pull_requests_per_board.append(board_data)
 
-    return pull_requests_per_board
+        return pull_requests_per_board
 
+    @staticmethod
+    def send_unmerged_pull_requests_data(data, recipients, attachment=None):
+        """ Sends an email according to given data """
 
-def send_unmerged_pull_requests_data(data, csv=None):
+        html_content = Command.create_email_template(data)
+        email_message = EmailMessage(subject='Trello Manager - Unmerged Pull Requests',
+                                     body=html_content,
+                                     from_email=settings.EMAIL_HOST_USER,
+                                     to=recipients)
+        email_message.content_subtype = 'html'
+        if attachment:
+            email_message.attach_file(attachment)
+        email_message.send()
 
-    t = Template(EMAIL_TEMPLATE)
+        logger.info(f'Email was sent to {recipients}')
 
-    html = t.render(Context({'boards': data}))
-    send_mail(subject='Trello Manager - Unmerged Pull Requests',
-              message='This are your unmerged pull requests',
-              from_email='saarwasserman@gmail.com',
-              recipient_list=['saar.wasserman@bluevine.com'],
-              html_message=html)
+    @staticmethod
+    def create_pull_requests_csv(data, member_id):
+        """ create a temporary csv file """
+
+        import os, tempfile, csv
+        from datetime import datetime
+
+        now = datetime.now().strftime("%m_%d_%Y__%H%M%S")
+        file_path = os.path.join(tempfile.gettempdir(), f'unmerged_pull_request_{member_id}_{now}.csv')
+        with open(file_path, 'w') as csv_file:
+            headers = ['board name', 'card name', 'card url', 'pull request name', 'pull request url']
+            writer = csv.writer(csv_file)
+            writer.writerow(headers)
+            for board in data:
+                cards = board['cards']
+                for card in cards:
+                    pull_requests = card['pull_requests']
+                    for pull_request in pull_requests:
+                        writer.writerow([board['name'], card['name'],
+                                        card['url'], pull_request['name'],
+                                        pull_request['url']])
+
+        return file_path
+
+    @staticmethod
+    def fetch_data_from_pull_request_url(pull_request_url):
+        """ Parses and returns pull request data from a pull request url """
+
+        split_url = pull_request_url.split("/")
+        owner = split_url[3]
+        repo = split_url[4]
+        number = int(split_url[-1])
+
+        return owner, repo, number
+
+    def _fetch_cards_by_member(self, member_id):
+        """ Fetches all the cards for this member """
+
+        cards = self.trello_client.fetch_json(
+            '/members/' + member_id + '/cards',
+            query_params={'filter': 'visible',
+                          'fields': 'name,idBoard,url',
+                          'attachments': 'true'})
+        return sorted(cards, key=lambda card: card['idBoard'])
+
+    def _get_board_name_by_id(self, board_id):
+        """ Returns the name of the board """
+
+        if board_id not in self.boards_names:
+            self.boards_names[board_id] = self.trello_client.get_board(board_id).name
+
+        return self.boards_names[board_id]
+
+    def _get_pull_request_by_url(self, pull_request_url):
+
+        owner, repo, number = self.fetch_data_from_pull_request_url(pull_request_url)
+        return self.github_client.get_repo(repo).get_pull(int(number))
+
+    @staticmethod
+    def create_email_template(data):
+
+        email_template = Template(EMAIL_TEMPLATE)
+        return email_template.render(Context({'boards': data}))
 
 
 EMAIL_TEMPLATE = '''
@@ -94,14 +196,14 @@ EMAIL_TEMPLATE = '''
         </head>
         <body>
             {% if boards %}
-                <h2>There are pull requests awaiting review:</h2>
-    
+                <h2>There are pull requests awaiting merge:</h2>
+
                 {% for board in boards %}
-                    <h3>{{board.board_name}} (Board)</h3>
+                    <h3>{{board.name}} (Board)</h3>
                     {% for card in board.cards %}
-                    <h4><a href={{card.card_url}}>{{card.card_name}} (Card)</a></h4>
+                    <h4><a href={{card.url}}>{{card.name}} (Card)</a></h4>
                         {% for pull_request in card.pull_requests %}
-                        <li><a href={{pull_request.url}}>{{pull_request.title}} (Pull Request)</a></li>
+                        <li><a href={{pull_request.url}}>{{pull_request.name}} (Pull Request)</a></li>
                         {% endfor %}
                     {% endfor %}
                 {% endfor %}
