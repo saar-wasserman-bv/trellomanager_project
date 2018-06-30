@@ -30,6 +30,7 @@ DEBUG = True
 # Application definition
 
 INSTALLED_APPS = [
+    'trellomanager.profiles',
     'trellomanager.github_integration',
     'django.contrib.admin',
     'django.contrib.auth',
