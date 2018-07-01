@@ -7,52 +7,53 @@ from django.template import Template, Context
 from trellomanager.profiles.models import User
 from bluevine import settings
 
+TASK_CONFIG = {
+    'date_time': ['', ],
+    'boards': [
+        {
+            'name': 'R&D Internal',
+            'id': '5a659a13000fc50c3840ba43',
+            'lists': [
+                {
+                    'name': 'Doing',
+                    'id': '5a659a13000fc50c3840ba47'
+                },
+                {
+                    'name': 'Done on Dev',
+                    'id': '5a659a13000fc50c3840ba48'
+                }
+            ],
+        },
+        {
+            'name': 'Urgent Tasks',
+            'id': '59ba7b09fd71db38d031f860',
+            'lists': [
+                {
+                    'name': 'Urgent Tasks',
+                    'id': '591174f8af7983a027c09902',
+                },
+            ]
+        }
+    ],
+    'roles': ['TL', ],
+    'additional_emails': ['saar.wasserman@bluevine.com'],
+}
+
 
 class Command(BaseCommand):
 
-    task_config = {
-        'date_time': ['', ],
-        'boards': [
-            {
-                'name': 'Tello Reports',
-                'id': '5b1a2a42be67484938a11d16',
-                'lists': [
-                    {
-                        'name': 'To Do',
-                        'id': '5b1a2a42be67484938a11d17'
-                    },
-                    {
-                        'name': 'Doing',
-                        'id': '5b1a2a42be67484938a11d18'
-                    }
-                ],
-            },
-            {
-                'name': 'Another Board',
-                'id': 'J5FqV9hR',
-                'lists': [
-                    {
-                        'name': 'somthing else',
-                        'id': '5b2ec4e499b93bf92586ebc4',
-                    },
-                ]
-            }
-        ],
-        'roles': ['TL', ],
-        'additional_emails': ['saarwasserman@gmail.com'],
-    }
-
     def __init__(self):
 
+        super().__init__()
         self.trello_client = TrelloClient(settings.TRELLO_API_KEY, settings.TRELLO_API_TOKEN)
 
     def handle(self, *args, **options):
         """ Run command """
 
-        boards = Command.task_config['boards']
+        boards = TASK_CONFIG['boards']
         cards = self.get_relevant_cards(boards)
 
-        roles = Command.task_config['roles']
+        roles = TASK_CONFIG['roles']
         users = User.objects.filter(role__in=roles)
 
         # send cards to its member based on role
@@ -63,7 +64,7 @@ class Command(BaseCommand):
                 self.send_data(member_cards, [user.email])
 
         # send cards to the additional emails
-        additional_emails = Command.task_config.get('additional_emails')
+        additional_emails = TASK_CONFIG.get('additional_emails')
         if additional_emails:
             self.send_data(cards, additional_emails)
 

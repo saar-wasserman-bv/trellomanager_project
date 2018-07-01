@@ -1,17 +1,15 @@
 import logging
-from itertools import groupby
 
 from trello import TrelloClient
 from github import Github
-
-from github import UnknownObjectException
 
 from django.core.management import BaseCommand
 from django.template import Template, Context
 from django.core.mail import EmailMessage
 
 from bluevine import settings
-
+from trellomanager.profiles.models import User
+import datetime
 
 logger = logging.getLogger(__file__)
 
@@ -20,9 +18,16 @@ class Command(BaseCommand):
 
     def __init__(self):
 
+        super().__init__()
         self.trello_client = TrelloClient(settings.TRELLO_API_KEY, settings.TRELLO_API_TOKEN)
         self.github_client = Github(settings.GITHUB_TOKEN).get_organization('bluevine-dev')
-        self.boards_names = {}
+
+        repos = self.github_client.get_repos()
+        unmerged_pull_requests = []
+        for repo in repos:
+            unmerged_pull_requests += [pr for pr in repo.get_pulls() if not pr.merged_at]
+
+        self.unmerged_pull_requests = {pr.html_url: pr for pr in unmerged_pull_requests}
 
     def add_arguments(self, parser):  # pylint: disable=no-self-use
         """ Add extra arguments """
@@ -35,33 +40,26 @@ class Command(BaseCommand):
         parser.add_argument('--user',
                             action='store',
                             help='run command for specified user')
-        parser.add_argument('--group',
-                            action='store',
-                            help='run command for all members of the specified group')
 
     def handle(self, *args, **options):
         """ Run command """
 
-        member_ids = []
-        group = options.get('group')
-        if group:
-            member_ids = []
+        username = options.get('user')
+        if username:
+            users = User.objects.filter(username=username)
         else:
-            email = options.get('user')
-            if email:
-                member_ids = [self.trello_client.get_member(email).id]
-                print(member_ids)
+            users = User.objects.filter(role='TL')
 
         # generate unmerged pull request email to all desired users
-        for member_id in member_ids:
-            data = self._get_unmerged_pull_requests2(member_id)
+        for user in users:
+            member_id = self.trello_client.get_member(user.email).id
+            data = self._get_unmerged_pull_requests(member_id)
             attachment = None
             if data and options['csv']:
                 attachment = self.create_pull_requests_csv(data, member_id)
                 logger.info(f'attachment {attachment} was created')
 
-            # self.send_unmerged_pull_requests_data(data=data, recipients=[email], attachment=attachment)
-        self.send_unmerged_pull_requests_data(data=data, recipients=[email], attachment=attachment)
+            self.send_unmerged_pull_requests_data(data=data, recipients=['saar.wasserman@bluevine.com'], attachment=attachment)
 
     def _get_unmerged_pull_requests(self, member_id):
         """ Returns all unmerged pull requests related to cards """
@@ -72,7 +70,7 @@ class Command(BaseCommand):
             cards = board.get_cards(card_filter='open')
 
             # get only member cards
-            cards = [card for card in cards if member_id in card.member_id and not card.closed]
+            cards = [card for card in cards if member_id in card.member_id]
             pull_requests_per_card = []
             for card in cards:
                 attachments = card.get_attachments()
@@ -81,15 +79,9 @@ class Command(BaseCommand):
                 # check for unmerged pull request in card
                 unmerged_pull_requests = []
                 for pr_attachment in pr_attachments:
-                    try:
-                        pull_request = self._get_pull_request_by_url(pr_attachment.url)
-                    except UnknownObjectException as e:
-                        logger.error(str(e))
-                        continue
-
-                    if not pull_request.is_merged() and not pull_request.closed_at:
+                    if pr_attachment.url in self.unmerged_pull_requests:
                         pull_request_data = {
-                            'name': pull_request.title,
+                            'name': pr_attachment.name,
                             "url": pr_attachment.url,
                         }
 

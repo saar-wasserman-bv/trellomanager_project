@@ -1,5 +1,4 @@
 from django.db import models
-from django.core.validators import EmailValidator
 
 
 class User(models.Model):
@@ -8,6 +7,7 @@ class User(models.Model):
     ROLES = (
         ('TL', 'Team Leader'),
         ('PM', 'Product Manager'),
+        ('DV', 'Developer')
     )
 
     # TODO: add email validator to allow only bluevine.com emails
