@@ -17,6 +17,7 @@ build
 
 # SQLite3 database files:
 *.db
+*.sqlite3
 
 # Logs:
 *.log
@@ -27,6 +28,8 @@ etl/_logs/
 
 .ipynb_checkpoints/
 *.ipynb
+
+*.DS_STORE
 
 .coverage
 
