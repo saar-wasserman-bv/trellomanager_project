@@ -32,6 +32,6 @@ etl/_logs/
 *.DS_STORE
 
 .coverage
-
+.config
 .cache/v/cache/lastfailed
 
